@@ -40,8 +40,51 @@ async function getPayrollByPeriod(req, res, next) {
     }
 }
 
+// ============ GET DAFTAR PERIODE (untuk dropdown summary) ============
+async function getPayrollPeriods(req, res, next) {
+    try {
+        const result = await payrollService.getPeriods();
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+// ============ GET RINGKASAN PAYROLL PER PERIODE (aggregate) ============
+async function getPayrollSummaryByPeriod(req, res, next) {
+    try {
+        const { period } = req.params;
+        const result = await payrollService.getSummaryByPeriod(period);
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+// ============ GET RINGKASAN SEMUA PERIODE (aggregate) ============
+async function getAllPayrollSummary(req, res, next) {
+    try {
+        const result = await payrollService.getAllSummary();
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export default {
     createPayroll,
     getAllPayrolls,
-    getPayrollByPeriod
+    getPayrollByPeriod,
+    getPayrollPeriods,
+    getPayrollSummaryByPeriod,
+    getAllPayrollSummary
 };

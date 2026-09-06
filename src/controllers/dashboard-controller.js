@@ -54,42 +54,11 @@ const getAdminPayrollSummary = async (req, res, next) => {
     }
 };
 
-const getPayrollPeriods = async (req, res, next) => {
-    try {
-        const result = await dashboardService.getPayrollPeriods();
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
-const getPayrollByPeriod = async (req, res, next) => {
-    try {
-        const { period } = req.params;
-        const result = await dashboardService.getPayrollByPeriod(period);
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
-const getAllPayrolls = async (req, res, next) => {
-    try {
-        const result = await dashboardService.getAllPayrollsAggregate();
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
 export default {
     getAdminDashboard,
     getAdminStats,
     getAdminChart,
     getAdminOvertime,
     getAdminActivity,
-    getAdminPayrollSummary,
-    getPayrollPeriods,
-    getPayrollByPeriod,
-    getAllPayrolls  // ← tambah
+    getAdminPayrollSummary
 };

@@ -1,7 +1,7 @@
 import express from "express";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 import { authorize } from "../middleware/role.middleware.js";
-import departementController from "../controllers/departement-controller.js";
+import departmentController from "../controllers/department-controller.js";
 
 export const departmentApi = express.Router();
 
@@ -9,32 +9,32 @@ export const departmentApi = express.Router();
 departmentApi.post("/api/departments",
     authMiddleware,
     authorize("SUPER_ADMIN", "HR_ADMIN"),
-    departementController.createDepartment
+    departmentController.createDepartment
 );
 
 departmentApi.get("/api/departments",
     authMiddleware,
     authorize("SUPER_ADMIN", "HR_ADMIN"),
-    departementController.getAllDepartments
+    departmentController.getAllDepartments
 );
 
 // Get By Id
 departmentApi.get("/api/departments/:id",
     authMiddleware,
     authorize("SUPER_ADMIN", "HR_ADMIN"),
-    departementController.getDepartmentById
+    departmentController.getDepartmentById
 );
 
 // Update - hanya SUPER_ADMIN dan HR_ADMIN
 departmentApi.put("/api/departments/:id",
     authMiddleware,
     authorize("SUPER_ADMIN", "HR_ADMIN"),
-    departementController.updateDepartment
+    departmentController.updateDepartment
 );
 
 // Delete - hanya SUPER_ADMIN
 departmentApi.delete("/api/departments/:id",
     authMiddleware,
     authorize("SUPER_ADMIN"),
-    departementController.removeDepartment
+    departmentController.removeDepartment
 );

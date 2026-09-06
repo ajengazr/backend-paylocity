@@ -1,4 +1,4 @@
-import departmentService from "../services/departement-service.js";
+import departmentService from "../services/department-service.js";
 
 async function createDepartment(req, res, next) {
     try {

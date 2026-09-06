@@ -1,6 +1,6 @@
 export function validate (schema, req){
     const result = schema.validate(req, {
-        aborEarly: false,
+        abortEarly: false,
         convert: true
     });
 

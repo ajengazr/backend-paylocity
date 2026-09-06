@@ -3,16 +3,23 @@ import dotenv from "dotenv";
 
 dotenv.config();
 async function authMiddleware(req, res, next) {
-    const cookie = req.cookies.accessToken;
+    // Prioritas: cookie (set saat login via res.cookie), fallback ke header Authorization.
+    let token = req.cookies?.accessToken;
 
-    if (!cookie) {
+    if (!token) {
+        const authHeader = req.headers?.authorization;
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.slice(7).trim();
+        }
+    }
+
+    if (!token) {
         return res.status(401).json({
             message: "Belum Terverifikasi",
         });
     }
     
     try {
-        const token = cookie;
         const decoded = jwt.verify(
             token, 
             process.env.JWT_TOKEN

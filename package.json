@@ -13,7 +13,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.15.1",
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "6",
     "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -23,6 +23,6 @@
     "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
-    "prisma": "^6.19.3"
+    "prisma": "6"
   }
 }

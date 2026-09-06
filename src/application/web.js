@@ -5,7 +5,7 @@ import { authApi } from "../routes/auth-router.js";
 import { errorMiddleware } from "../middleware/error.middleware.js";
 import { protectedApi } from "../routes/protected.api.js";
 import { employeeApi } from "../routes/employee-route.js";
-import { departmentApi } from "../routes/departement-route.js";
+import { departmentApi } from "../routes/department-route.js";
 import { positionApi } from "../routes/position-route.js";
 import { overtimeApi } from "../routes/overtime-route.js";
 import payrollApi from "../routes/payroll-route.js";

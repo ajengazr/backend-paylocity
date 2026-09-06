@@ -19,6 +19,24 @@ payrollApi.get("/api/payrolls",
     authorize("SUPER_ADMIN", "HR_ADMIN"),
     payrollController.getAllPayrolls);
 
+// Get daftar periode (dropdown summary) — didaftarkan sebelum /:period
+payrollApi.get("/api/payrolls/periods",
+    authMiddleware,
+    authorize("SUPER_ADMIN", "HR_ADMIN"),
+    payrollController.getPayrollPeriods);
+
+// Get ringkasan gabungan semua periode
+payrollApi.get("/api/payrolls/all",
+    authMiddleware,
+    authorize("SUPER_ADMIN", "HR_ADMIN"),
+    payrollController.getAllPayrollSummary);
+
+// Get ringkasan payroll 1 periode (format aggregate)
+payrollApi.get("/api/payrolls/:period/summary",
+    authMiddleware,
+    authorize("SUPER_ADMIN", "HR_ADMIN"),
+    payrollController.getPayrollSummaryByPeriod);
+
 // Get payroll detail by period
 payrollApi.get("/api/payrolls/:period",
     authMiddleware,

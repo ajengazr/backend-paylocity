@@ -16,10 +16,11 @@ notificationApi.patch("/api/notifications/:id/read", authMiddleware, notificatio
 // Menandai semua notifikasi sebagai sudah dibaca
 notificationApi.patch("/api/notifications/read-all", authMiddleware, notificationController.markAllAsRead);
 
+// Menghapus semua notifikasi yang sudah dibaca
+// WAJIB didaftarkan sebelum "/:id" agar tidak tertangkap sebagai parameter id
+notificationApi.delete("/api/notifications/read", authMiddleware, notificationController.deleteReadNotifications);
+
 // Menghapus satu notifikasi
 notificationApi.delete("/api/notifications/:id", authMiddleware, notificationController.deleteNotification);
-
-// Menghapus semua notifikasi yang sudah dibaca
-notificationApi.delete("/api/notifications/read", authMiddleware, notificationController.deleteReadNotifications);
 
 export default notificationApi;

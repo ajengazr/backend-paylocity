@@ -42,20 +42,4 @@ dashboardApi.get("/dashboard/admin/payroll-summary",
     dashboardController.getAdminPayrollSummary
 );
 
-dashboardApi.get("/payroll/all",
-    authMiddleware,
-    authorize("SUPER_ADMIN", "HR_ADMIN"),
-    dashboardController.getAllPayrolls);
-
-dashboardApi.get("/payroll/periods",
-    authMiddleware,
-    authorize("SUPER_ADMIN", "HR_ADMIN"),
-    dashboardController.getPayrollPeriods);
-
-dashboardApi.get("/payroll/:period",
-    authMiddleware,
-    authorize("SUPER_ADMIN", "HR_ADMIN"),
-    dashboardController.getPayrollByPeriod);
-
-
 export default dashboardApi;

@@ -1,5 +1,5 @@
 import { prismaClient } from "../application/db.js";
-import { createDepartmentValidation, updateDepartmentValidation, getDepartmentValidation } from "../validations/departement-validation.js";
+import { createDepartmentValidation, updateDepartmentValidation, getDepartmentValidation } from "../validations/department-validation.js";
 import { validate } from "../validations/validation.js";
 import { ResponseError } from "../errors/response.error.js";
 
