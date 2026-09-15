@@ -1,7 +1,16 @@
+import { Prisma } from "@prisma/client";
 import { prismaClient } from "../application/db.js";
 import { createPayrollValidation } from "../validations/payroll-validation.js";
 import { validate } from "../validations/validation.js";
 import { ResponseError } from "../errors/response.error.js";
+
+const Decimal = Prisma.Decimal;
+
+// Seluruh nilai uang dihitung sebagai Decimal, bukan float. Kolomnya sudah
+// Decimal(10,2) di schema, jadi membongkarnya ke float lalu menulisnya balik
+// hanya menambah galat pembulatan pada angka yang tidak boleh meleset.
+const toDecimal = (value) => new Decimal(value ?? 0);
+const money = (value) => toDecimal(value).toDecimalPlaces(2);
 
 const PAYROLL_CONFIG = {
     pph21TER: {
@@ -74,7 +83,7 @@ const PAYROLL_CONFIG = {
             { min: 74900001, max: 87500000, rate: 0.14 },
             { min: 87500001, max: 102450000, rate: 0.16 },
             { min: 102450001, max: 120000000, rate: 0.18 },
-            { min: 12000001, max: 144400000, rate: 0.20 },
+            { min: 120000001, max: 144400000, rate: 0.20 },
             { min: 144400001, max: 179350000, rate: 0.22 },
             { min: 179350001, max: 234200000, rate: 0.23 },
             { min: 234200001, max: 333200000, rate: 0.24 },
@@ -84,7 +93,7 @@ const PAYROLL_CONFIG = {
             { min: 726650001, max: 927450000, rate: 0.28 },
             { min: 927450001, max: 1183150000, rate: 0.29 },
             { min: 1183150001, max: 1513800000, rate: 0.30 },
-            { min: 1513800000, max: 1933300000, rate: 0.31 },
+            { min: 1513800001, max: 1933300000, rate: 0.31 },
             { min: 1933300001, max: 2472700000, rate: 0.32 },
             { min: 2472700001, max: Infinity, rate: 0.33 }
         ],
@@ -125,13 +134,15 @@ const PAYROLL_CONFIG = {
             { min: 731750001, max: 933950000, rate: 0.27 },
             { min: 933950001, max: 1191350000, rate: 0.28 },
             { min: 1191350001, max: 1524300000, rate: 0.29 },
-            { min: 1524300000, max: 1946650000, rate: 0.30 },
-            { min: 1946650000, max: 2489800000, rate: 0.31 },
-            { min: 2489800000, max: Infinity, rate: 0.32 }
+            { min: 1524300001, max: 1946650000, rate: 0.30 },
+            { min: 1946650001, max: 2489800000, rate: 0.31 },
+            { min: 2489800001, max: Infinity, rate: 0.32 }
         ]
     },
     bpjsEmployee: { jht: 0.02, kesehatan: 0.01 },
-    bpjsCompany: { jht: 0.037, kesehatan: 0.04, jkk: 0.0024, jkm: 0.003 }
+    bpjsCompany: { jht: 0.037, kesehatan: 0.04, jkk: 0.0024, jkm: 0.003 },
+    // Batas atas upah yang diperhitungkan untuk iuran BPJS Kesehatan.
+    bpjsHealthSalaryCap: 12000000
 };
 
 function getPeriodDates(period) {
@@ -153,76 +164,88 @@ function getPtkpCategory(taxStatus) {
     return "A";
 }
 
+const TER_CATEGORY_RATES = {
+    A: () => PAYROLL_CONFIG.pph21TER.categoryA,
+    B: () => PAYROLL_CONFIG.pph21TER.categoryB,
+    C: () => PAYROLL_CONFIG.pph21TER.categoryC
+};
+
 function calculatePph21(basicSalary, overtimePay, taxStatus = "tk0") {
-    const bruttoSalary = parseFloat(basicSalary) + parseFloat(overtimePay || 0);
+    const brutto = toDecimal(basicSalary).plus(toDecimal(overtimePay));
     const category = getPtkpCategory(taxStatus);
-    
-    let categoryRates;
-    switch (category) {
-        case "A": categoryRates = PAYROLL_CONFIG.pph21TER.categoryA; break;
-        case "B": categoryRates = PAYROLL_CONFIG.pph21TER.categoryB; break;
-        case "C": categoryRates = PAYROLL_CONFIG.pph21TER.categoryC; break;
-        default: categoryRates = PAYROLL_CONFIG.pph21TER.categoryA;
+    const categoryRates = (TER_CATEGORY_RATES[category] ?? TER_CATEGORY_RATES.A)();
+
+    // Batas atas tiap lapisan TER bersifat inklusif: penghasilan "s.d. Rp 5.400.000"
+    // masih masuk lapisan itu. Membandingkan dengan "<" membuat gaji yang persis di
+    // angka batas tidak cocok di lapisan mana pun, lalu jatuh ke tarif cadangan.
+    const tier = categoryRates.find((t) =>
+        brutto.gte(t.min) && (t.max === Infinity || brutto.lte(t.max))
+    );
+
+    if (!tier) {
+        // Lapisan terakhir tiap kategori bertutup Infinity, jadi ini seharusnya mustahil.
+        // Kalau tetap terjadi, tabelnya rusak dan lebih baik berhenti daripada diam-diam
+        // memotong gaji dengan tarif tebakan.
+        throw new ResponseError(
+            500,
+            `Tarif PPh 21 tidak ditemukan untuk brutto ${brutto.toString()} pada kategori ${category}.`
+        );
     }
-    
-    for (const tier of categoryRates) {
-        if (bruttoSalary >= tier.min && bruttoSalary < tier.max) {
-            return parseFloat((bruttoSalary * tier.rate).toFixed(2));
-        }
-    }
-    
-    return parseFloat((bruttoSalary * 0.09).toFixed(2));
+
+    return money(brutto.times(tier.rate));
 }
 
 function calculateBpjsDeductions(basicSalary) {
-    const basic = parseFloat(basicSalary);
-    const bpjsHealthSalary = Math.min(basic, 12000000);
-    
+    const basic = toDecimal(basicSalary);
+    const bpjsHealthSalary = Decimal.min(basic, PAYROLL_CONFIG.bpjsHealthSalaryCap);
+
     return {
-        bpjsKesehatan: parseFloat((bpjsHealthSalary * PAYROLL_CONFIG.bpjsEmployee.kesehatan).toFixed(2)),
-        bpjsKerja: 0,
-        jht: parseFloat((basic * PAYROLL_CONFIG.bpjsEmployee.jht).toFixed(2))
+        bpjsKesehatan: money(bpjsHealthSalary.times(PAYROLL_CONFIG.bpjsEmployee.kesehatan)),
+        // JKK dan JKM sepenuhnya ditanggung perusahaan, jadi nol di sisi karyawan.
+        bpjsKerja: money(0),
+        jht: money(basic.times(PAYROLL_CONFIG.bpjsEmployee.jht))
     };
 }
 
 function calculateCompanyBpjs(basicSalary) {
-    const basic = parseFloat(basicSalary);
-    const bpjsHealthSalary = Math.min(basic, 12000000);
-    
+    const basic = toDecimal(basicSalary);
+    const bpjsHealthSalary = Decimal.min(basic, PAYROLL_CONFIG.bpjsHealthSalaryCap);
+    const jkkJkmRate = toDecimal(PAYROLL_CONFIG.bpjsCompany.jkk).plus(PAYROLL_CONFIG.bpjsCompany.jkm);
+
     return {
-        bpjsKesehatan: parseFloat((bpjsHealthSalary * PAYROLL_CONFIG.bpjsCompany.kesehatan).toFixed(2)),
-        bpjsKerja: parseFloat((basic * (PAYROLL_CONFIG.bpjsCompany.jkk + PAYROLL_CONFIG.bpjsCompany.jkm)).toFixed(2)),
-        jht: parseFloat((basic * PAYROLL_CONFIG.bpjsCompany.jht).toFixed(2))
+        bpjsKesehatan: money(bpjsHealthSalary.times(PAYROLL_CONFIG.bpjsCompany.kesehatan)),
+        bpjsKerja: money(basic.times(jkkJkmRate)),
+        jht: money(basic.times(PAYROLL_CONFIG.bpjsCompany.jht))
     };
 }
 
 function calculatePayslip(basicSalary, overtimePay = 0, taxStatus = "tk0") {
-    const basic = parseFloat(basicSalary);
-    const overtime = parseFloat(overtimePay || 0);
-    
-    const totalEarnings = parseFloat((basic + overtime).toFixed(2));
-    
+    const basic = toDecimal(basicSalary);
+    const overtime = toDecimal(overtimePay);
+
+    const totalEarnings = money(basic.plus(overtime));
+
     const bpjsEmployee = calculateBpjsDeductions(basic);
     const pph21 = calculatePph21(basic, overtime, taxStatus);
-    const totalDeductions = parseFloat((
-        bpjsEmployee.bpjsKesehatan + 
-        bpjsEmployee.bpjsKerja + 
-        bpjsEmployee.jht + 
-        pph21
-    ).toFixed(2));
-    
+    const totalDeductions = money(
+        bpjsEmployee.bpjsKesehatan
+            .plus(bpjsEmployee.bpjsKerja)
+            .plus(bpjsEmployee.jht)
+            .plus(pph21)
+    );
+
     const bpjsCompany = calculateCompanyBpjs(basic);
-    const totalCompanyContribution = parseFloat((
-        bpjsCompany.bpjsKesehatan + 
-        bpjsCompany.bpjsKerja + 
-        bpjsCompany.jht
-    ).toFixed(2));
-    
-    const netSalary = parseFloat((totalEarnings - totalDeductions).toFixed(2));
-    
+    const totalCompanyContribution = money(
+        bpjsCompany.bpjsKesehatan
+            .plus(bpjsCompany.bpjsKerja)
+            .plus(bpjsCompany.jht)
+    );
+
+    const netSalary = money(totalEarnings.minus(totalDeductions));
+
     return {
-        basicSalary: basic,
-        overtimePay: overtime,
+        basicSalary: money(basic),
+        overtimePay: money(overtime),
         bpjsKesehatan: bpjsEmployee.bpjsKesehatan,
         bpjsKerja: bpjsEmployee.bpjsKerja,
         jht: bpjsEmployee.jht,
@@ -308,12 +331,17 @@ async function create(userId, reqBody) {
         const payslips = [];
         
         for (const employee of employees) {
-            let totalOvertimePay = 0;
+            let totalOvertimePay = toDecimal(0);
             for (const overtime of employee.overtimes) {
-                totalOvertimePay += parseFloat(overtime.overtimePay || 0);
-                await tx.overtime.update({ 
-                    where: { id: overtime.id }, 
-                    data: { payrollId: payroll.id } 
+                totalOvertimePay = totalOvertimePay.plus(toDecimal(overtime.overtimePay));
+            }
+
+            // Satu updateMany menggantikan satu update per lembur, supaya transaksi
+            // tidak menumpuk ratusan round-trip saat payroll diproses.
+            if (employee.overtimes.length > 0) {
+                await tx.overtime.updateMany({
+                    where: { id: { in: employee.overtimes.map((o) => o.id) } },
+                    data: { payrollId: payroll.id }
                 });
             }
             
@@ -362,25 +390,24 @@ async function create(userId, reqBody) {
             payslips.push(payslip);
         }
         
-        for (const payslip of payslips) {
-            await tx.notification.create({
-                data: { 
+        // Seluruh notifikasi ditulis dalam satu perintah. Sebelumnya tiap karyawan
+        // memicu satu INSERT tersendiri di dalam transaksi, yang pada payroll besar
+        // menahan transaksi terbuka jauh lebih lama daripada perlunya.
+        await tx.notification.createMany({
+            data: [
+                ...payslips.map((payslip) => ({
                     userId: payslip.employee.userId,
-                    title: 'Slip Gaji Tersedia', 
-                    message: `Slip gaji periode ${payroll.period} telah tersedia. Gaji bersih: Rp ${parseFloat(payslip.netSalary).toLocaleString('id-ID')}.`, 
-                    type: 'payroll' 
+                    title: 'Slip Gaji Tersedia',
+                    message: `Slip gaji periode ${payroll.period} telah tersedia. Gaji bersih: Rp ${toDecimal(payslip.netSalary).toNumber().toLocaleString('id-ID')}.`,
+                    type: 'payroll'
+                })),
+                {
+                    userId: userId,
+                    title: 'Payroll Berhasil Diproses',
+                    message: `Payroll periode ${payroll.period} untuk ${payslips.length} karyawan telah berhasil diproses.`,
+                    type: 'success'
                 }
-            });
-        }
-        
-        // Kirim notifikasi ke admin
-        await tx.notification.create({
-            data: { 
-                userId: userId, 
-                title: 'Payroll Berhasil Diproses', 
-                message: `Payroll periode ${payroll.period} untuk ${payslips.length} karyawan telah berhasil diproses.`, 
-                type: 'success' 
-            }
+            ]
         });
         
         return { 
@@ -511,6 +538,30 @@ async function getPayslipByEmployee(employeeId, period) {
     return payslips;
 }
 
+// Menjumlahkan sekumpulan payslip dengan Decimal, lalu mengembalikannya sebagai
+// number biasa supaya bentuk respons ke frontend tidak berubah.
+function sumPayslips(payslips) {
+    const zero = toDecimal(0);
+    const acc = payslips.reduce(
+        (sum, p) => ({
+            netSalary: sum.netSalary.plus(toDecimal(p.netSalary)),
+            basic: sum.basic.plus(toDecimal(p.basicSalary)),
+            overtime: sum.overtime.plus(toDecimal(p.overtimePay)),
+            deductions: sum.deductions.plus(toDecimal(p.totalDeductions)),
+            pph21: sum.pph21.plus(toDecimal(p.pph21)),
+            bpjs: sum.bpjs
+                .plus(toDecimal(p.bpjsKesehatan))
+                .plus(toDecimal(p.bpjsKerja))
+                .plus(toDecimal(p.jht))
+        }),
+        { netSalary: zero, basic: zero, overtime: zero, deductions: zero, pph21: zero, bpjs: zero }
+    );
+
+    return Object.fromEntries(
+        Object.entries(acc).map(([key, value]) => [key, money(value).toNumber()])
+    );
+}
+
 // ============ DAFTAR PERIODE PAYROLL (untuk dropdown summary) ============
 async function getPeriods() {
     const payrolls = await prismaClient.payroll.findMany({
@@ -529,25 +580,17 @@ async function getSummaryByPeriod(period) {
 
     if (!payroll) return null;
 
-    let totalNetSalary = 0, totalBasic = 0, totalOvertime = 0, totalDeductions = 0, pph21 = 0, bpjs = 0;
-    payroll.payslips.forEach(p => {
-        totalNetSalary += parseFloat(p.netSalary || 0);
-        totalBasic += parseFloat(p.basicSalary || 0);
-        totalOvertime += parseFloat(p.overtimePay || 0);
-        totalDeductions += parseFloat(p.totalDeductions || 0);
-        pph21 += parseFloat(p.pph21 || 0);
-        bpjs += parseFloat(p.bpjsKesehatan || 0) + parseFloat(p.bpjsKerja || 0) + parseFloat(p.jht || 0);
-    });
+    const totals = sumPayslips(payroll.payslips);
 
     return {
         items: [
-            { label: 'Gaji Pokok', value: totalBasic, color: 'bg-blue-500' },
-            { label: 'Lembur', value: totalOvertime, color: 'bg-emerald-500' },
-            { label: 'BPJS', value: bpjs, color: 'bg-amber-500' },
-            { label: 'PPh 21', value: pph21, color: 'bg-red-500' },
-            { label: 'Potongan', value: totalDeductions, color: 'bg-gray-500' },
+            { label: 'Gaji Pokok', value: totals.basic, color: 'bg-blue-500' },
+            { label: 'Lembur', value: totals.overtime, color: 'bg-emerald-500' },
+            { label: 'BPJS', value: totals.bpjs, color: 'bg-amber-500' },
+            { label: 'PPh 21', value: totals.pph21, color: 'bg-red-500' },
+            { label: 'Potongan', value: totals.deductions, color: 'bg-gray-500' },
         ],
-        grandTotal: totalNetSalary,
+        grandTotal: totals.netSalary,
         footerNote: `Periode ${payroll.period}`,
         period: payroll.period,
         status: 'Sudah diproses'
@@ -562,30 +605,18 @@ async function getAllSummary() {
 
     if (!payrolls || payrolls.length === 0) return null;
 
-    let totalNetSalary = 0, totalBasic = 0, totalOvertime = 0, totalDeductions = 0, pph21 = 0, bpjs = 0;
-    const periodList = [];
-
-    payrolls.forEach(payroll => {
-        periodList.push(payroll.period);
-        payroll.payslips.forEach(p => {
-            totalNetSalary += parseFloat(p.netSalary || 0);
-            totalBasic += parseFloat(p.basicSalary || 0);
-            totalOvertime += parseFloat(p.overtimePay || 0);
-            totalDeductions += parseFloat(p.totalDeductions || 0);
-            pph21 += parseFloat(p.pph21 || 0);
-            bpjs += parseFloat(p.bpjsKesehatan || 0) + parseFloat(p.bpjsKerja || 0) + parseFloat(p.jht || 0);
-        });
-    });
+    const periodList = payrolls.map((payroll) => payroll.period);
+    const totals = sumPayslips(payrolls.flatMap((payroll) => payroll.payslips));
 
     return {
         items: [
-            { label: 'Gaji Pokok', value: totalBasic, color: 'bg-blue-500' },
-            { label: 'Lembur', value: totalOvertime, color: 'bg-emerald-500' },
-            { label: 'BPJS', value: bpjs, color: 'bg-amber-500' },
-            { label: 'PPh 21', value: pph21, color: 'bg-red-500' },
-            { label: 'Potongan', value: totalDeductions, color: 'bg-gray-500' },
+            { label: 'Gaji Pokok', value: totals.basic, color: 'bg-blue-500' },
+            { label: 'Lembur', value: totals.overtime, color: 'bg-emerald-500' },
+            { label: 'BPJS', value: totals.bpjs, color: 'bg-amber-500' },
+            { label: 'PPh 21', value: totals.pph21, color: 'bg-red-500' },
+            { label: 'Potongan', value: totals.deductions, color: 'bg-gray-500' },
         ],
-        grandTotal: totalNetSalary,
+        grandTotal: totals.netSalary,
         footerNote: `Gabungan ${payrolls.length} periode: ${periodList.join(', ')}`,
         period: 'all',
         status: 'Akumulasi'

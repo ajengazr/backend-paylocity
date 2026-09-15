@@ -17,8 +17,16 @@ import { reportApi } from "../routes/report-route.js";
 import { leaveApi } from "../routes/leave-route.js";
 const web = express();
 
+// Asal frontend dibaca dari environment dan boleh berisi lebih dari satu alamat,
+// dipisah koma. Sebelumnya nilainya ditulis mati ke localhost, sehingga backend
+// yang sudah di-deploy menolak permintaan dari frontend produksinya sendiri.
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 web.use(cors({
-    origin: "http://localhost:5173",
+    origin: allowedOrigins,
     credentials: true
 }));
 web.use(cookie());

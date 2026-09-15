@@ -65,19 +65,30 @@ async function deleteUser(req, res, next) {
     }
 }
 
+// Cookie sesi. Di produksi frontend dan backend berada di domain berbeda dan
+// diakses lewat HTTPS, jadi cookie harus Secure dan SameSite=None agar terkirim.
+// Di pengembangan lokal yang memakai HTTP, keduanya dilonggarkan lewat
+// COOKIE_SECURE=false. Nilai ini juga dipakai saat logout, karena clearCookie
+// hanya menghapus cookie bila opsinya sama persis dengan saat dipasang.
+function sessionCookieOptions() {
+    const secure = process.env.COOKIE_SECURE !== "false";
+
+    return {
+        httpOnly: true,
+        secure,
+        sameSite: secure ? "none" : "lax",
+        maxAge: 864000000
+    };
+}
+
 async function userLogin(req, res, next) {
     try {
         const request = req.body;
         const result = await authService.login(request);
-        res.cookie("accessToken", result.token, {
-            httpOnly: true, 
-            secure: false,
-            sameSite: "lax",
-            maxAge: 864000000
-        });
+        res.cookie("accessToken", result.token, sessionCookieOptions());
 
         return res.status(200).json({
-            success: true, 
+            success: true,
             data: result
         });
     } catch (error) {
@@ -89,7 +100,8 @@ async function userLogin(req, res, next) {
 
 async function userLogout(req, res, next) {
     try {
-        res.clearCookie("accessToken");
+        const { maxAge, ...clearOptions } = sessionCookieOptions();
+        res.clearCookie("accessToken", clearOptions);
 
         return res.status(200).json({
             success: true,
