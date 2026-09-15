@@ -1,6 +1,16 @@
 node_modules
-.env
-# Keep environment variables out of version control
 
+# Rahasia tidak boleh masuk version control.
+# Pola ini sengaja menangkap seluruh turunan .env (.env.local, .env.production,
+# salinan cadangan, dan sejenisnya), karena satu berkas yang lolos sudah cukup
+# untuk membocorkan kredensial database dan kunci token.
+.env
+.env.*
+!.env.example
 
 /generated/prisma
+
+# Berkas log
+*.log
+npm-debug.log*
+pnpm-debug.log*

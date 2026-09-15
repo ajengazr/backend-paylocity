@@ -122,6 +122,11 @@ async function remove(userId) {
     });
 }
 
+// Hash umpan untuk akun yang tidak ada. Tanpa ini, permintaan dengan email tak
+// terdaftar kembali jauh lebih cepat karena argon2 tidak pernah dijalankan, dan
+// selisih waktunya sendiri sudah cukup untuk menebak email mana yang punya akun.
+const DUMMY_HASH = await argon2.hash("hash-umpan-untuk-menyamakan-waktu-respons");
+
 async function login(req) {
     req = validate(loginValidation, req);
 
@@ -130,14 +135,16 @@ async function login(req) {
             email: req.email
         }
     });
-    if (!user) {
-        throw new ResponseError(404, "Email Tidak Ditemukan.");
+
+    // Email tidak terdaftar dan kata sandi salah sengaja dijawab sama persis:
+    // status dan pesan yang identik. Membedakannya membuat penyerang bisa
+    // memetakan email mana yang punya akun, lalu memusatkan tebakan ke situ.
+    const verifyPass = await argon2.verify(user ? user.password : DUMMY_HASH, req.password);
+
+    if (!user || !verifyPass) {
+        throw new ResponseError(401, "Email atau kata sandi salah.");
     }
 
-    const verifyPass = await argon2.verify(user.password, req.password); //mengembalikan atau hasilnya boolean
-    if (!verifyPass) {
-        throw new ResponseError(400, "Password Salah.");
-    }
     const token = await generateToken(user);
 
     return {
