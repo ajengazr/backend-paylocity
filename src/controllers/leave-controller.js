@@ -39,7 +39,7 @@ async function getMyLeaves(req, res, next) {
 async function getLeaveById(req, res, next) {
     try {
         const leaveId = parseInt(req.params.id);
-        const result  = await leaveService.getById(leaveId);
+        const result  = await leaveService.getById(leaveId, req.user);
         return res.status(200).json({
             success: true,
             data:    result

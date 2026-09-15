@@ -89,7 +89,7 @@ async function getMyOvertimes(req, res, next) {
 async function getOvertimeById(req, res, next) {
     try {
         const overtimeId = parseInt(req.params.id);
-        const result = await overtimeService.getById(overtimeId);
+        const result = await overtimeService.getById(overtimeId, req.user);
         return res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);

@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import cookie from "cookie-parser";
 import { authApi } from "../routes/auth-router.js";
 import { errorMiddleware } from "../middleware/error.middleware.js";
@@ -25,13 +27,49 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+// Di belakang proxy (Vercel, Railway, Nginx) alamat asli pengunjung ada di
+// X-Forwarded-For. Tanpa ini pembatas laju melihat semua permintaan datang dari
+// satu IP proxy, sehingga satu penyerang bisa mengunci seluruh pengguna.
+web.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 1));
+
+// Header keamanan dasar: sembunyikan X-Powered-By, pasang HSTS, larang MIME
+// sniffing, dan matikan referrer lintas situs.
+web.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
 web.use(cors({
     origin: allowedOrigins,
     credentials: true
 }));
 web.use(cookie());
 
-web.use(express.json());
+// Batas ukuran body. Tanpa batas, satu permintaan besar cukup untuk menghabiskan
+// memori proses. Tidak ada endpoint di aplikasi ini yang perlu lebih dari ini.
+web.use(express.json({ limit: "100kb" }));
+
+// Pembatas laju umum untuk seluruh API.
+web.use(rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { success: false, errors: "Terlalu banyak permintaan. Coba lagi nanti." }
+}));
+
+// Pembatas jauh lebih ketat untuk endpoint yang menerima kata sandi, supaya
+// percobaan tebak-menebak tidak bisa dijalankan beruntun.
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    skipSuccessfulRequests: true,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { success: false, errors: "Terlalu banyak percobaan masuk. Coba lagi dalam 15 menit." }
+});
+
+web.use("/api/users/login", authLimiter);
+web.use("/api/users/register", authLimiter);
 web.use(authApi);
 web.use(protectedApi);
 web.use(employeeApi);

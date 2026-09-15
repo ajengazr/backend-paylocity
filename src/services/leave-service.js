@@ -168,16 +168,32 @@ async function getMyLeaves(userId) {
 }
 
 // ============ GET BY ID ============
-async function getById(leaveId) {
+// Rute ini terbuka untuk EMPLOYEE, HR_ADMIN, dan SUPER_ADMIN. Tanpa penyaringan
+// pemilik, karyawan mana pun bisa membaca pengajuan cuti rekan kerjanya cukup
+// dengan menebak id. Karena itu id karyawan diambil dari token, bukan dari
+// permintaan, dan pengajuan milik orang lain dijawab 404 agar keberadaannya
+// tidak ikut bocor.
+async function getById(leaveId, requester) {
     leaveId = validate(getLeaveValidation, leaveId);
 
     const leave = await prismaClient.leaveRequest.findUnique({
         where:  { id: leaveId },
-        select: leaveSelect
+        select: { ...leaveSelect, employeeId: true }
     });
 
     if (!leave) {
         throw new ResponseError(404, "Pengajuan cuti tidak ditemukan.");
+    }
+
+    if (requester?.role === "EMPLOYEE") {
+        const employee = await prismaClient.employee.findUnique({
+            where:  { userId: requester.id },
+            select: { id: true }
+        });
+
+        if (!employee || leave.employeeId !== employee.id) {
+            throw new ResponseError(404, "Pengajuan cuti tidak ditemukan.");
+        }
     }
 
     return leave;

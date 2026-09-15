@@ -73,11 +73,16 @@ async function deleteUser(req, res, next) {
 function sessionCookieOptions() {
     const secure = process.env.COOKIE_SECURE !== "false";
 
+    // Umur cookie disamakan dengan umur token. Sebelumnya cookie bertahan 10 hari
+    // sementara tokennya kedaluwarsa dalam 1 hari, sehingga pengguna menyimpan
+    // cookie yang sudah tidak berlaku selama sembilan hari berikutnya.
+    const maxAge = Number(process.env.COOKIE_MAX_AGE_MS || 24 * 60 * 60 * 1000);
+
     return {
         httpOnly: true,
         secure,
         sameSite: secure ? "none" : "lax",
-        maxAge: 864000000
+        maxAge
     };
 }
 

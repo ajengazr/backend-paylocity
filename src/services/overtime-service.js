@@ -385,7 +385,11 @@ async function getMyOvertime(userId) {
     });
 }
 
-async function getById(overtimeId) {
+// Rute ini terbuka untuk EMPLOYEE, HR_ADMIN, dan SUPER_ADMIN. Tanpa penyaringan
+// pemilik, karyawan mana pun bisa membaca data lembur rekan kerjanya cukup dengan
+// menebak id. Identitas karyawan diambil dari token, bukan dari permintaan, dan
+// data milik orang lain dijawab 404 agar keberadaannya tidak ikut bocor.
+async function getById(overtimeId, requester) {
     overtimeId = validate(getOvertimeValidation, overtimeId);
 
     const overtime = await prismaClient.overtime.findUnique({
@@ -422,6 +426,17 @@ async function getById(overtimeId) {
 
     if (!overtime) {
         throw new ResponseError(404, "Data lembur tidak ditemukan.");
+    }
+
+    if (requester?.role === "EMPLOYEE") {
+        const employee = await prismaClient.employee.findUnique({
+            where:  { userId: requester.id },
+            select: { id: true }
+        });
+
+        if (!employee || overtime.employeeId !== employee.id) {
+            throw new ResponseError(404, "Data lembur tidak ditemukan.");
+        }
     }
 
     return overtime;
